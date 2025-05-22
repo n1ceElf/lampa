@@ -57,15 +57,19 @@
         try {
             var root_element = data.element;
 
-            // Проверяем тип data.element и ищем DOM-элемент по-разному
+            // Определяем root_element
             if (typeof root_element === 'string') {
                 root_element = document.querySelector(root_element);
             } else if (root_element && root_element.jquery) {
                 root_element = root_element[0];
             } else if (root_element && typeof root_element === 'object' && !(root_element instanceof Element)) {
-                // Если это объект файла, пытаемся найти DOM-элемент по data-path
+                // Если объект файла, ищем элемент по data-path
                 if (root_element.path) {
                     root_element = document.querySelector(`[data-path="${CSS.escape(root_element.path)}"]`);
+                    if (!root_element) {
+                        console.error('Не найден DOM-элемент с data-path:', root_element.path);
+                        return;
+                    }
                 } else {
                     console.error('data.element передан объектом без path:', root_element);
                     return;
@@ -99,7 +103,7 @@
 
             filterAndDisplayFiles(container, data.items, path);
 
-            // Вешаем обработчики кликов на хлебные крошки
+            // Обработчики кликов на хлебные крошки
             var breadcrumbs = container.querySelectorAll('.torrent-path-navigation .breadcrumb');
             breadcrumbs.forEach(function(crumb) {
                 crumb.onclick = function() {
@@ -108,7 +112,7 @@
                 };
             });
 
-            // Вешаем обработчики кликов на папки
+            // Обработчики кликов на папки
             var folder_items = container.querySelectorAll('.torrent-folder-list .folder-item');
             folder_items.forEach(function(folder) {
                 folder.onclick = function() {
@@ -134,10 +138,10 @@
             var file_path = file_el.dataset.path || file_el.dataset.name || '';
             var in_current_dir = false;
             if (path === '') {
-                // показываем только файлы в корне (без вложений)
+                // Показываем только файлы в корне (без вложений)
                 in_current_dir = file_path.indexOf('/') === -1;
             } else if (file_path.startsWith(path)) {
-                // проверяем, что файл в текущей папке, а не в поддиректории
+                // Проверяем, что файл в текущей папке, а не в поддиректории
                 var rest = file_path.slice(path.length);
                 in_current_dir = rest.indexOf('/') === -1 && (rest !== '');
             }
