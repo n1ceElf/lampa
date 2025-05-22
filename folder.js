@@ -75,45 +75,77 @@
     }
 
     function updateFileList(data, path) {
+        // Проверка и нормализация элемента
+        var element = data.element;
+        if (typeof element === 'string') {
+            element = document.querySelector(element);
+        } else if (element && element.jquery) {
+            element = element[0];
+        }
+
+        if (!element || !element.closest) {
+            console.error('Invalid element provided:', element);
+            return;
+        }
+
+        var container = element.closest('.torrent-list');
+        if (!container) {
+            console.error('Could not find .torrent-list container');
+            return;
+        }
+
         var filtered_files = filterFilesByPath(data.items, path);
         var structure = getFolderStructure(data.items);
         
-        var container = data.element.closest('.torrent-list');
-        var breadcrumbs = container.find('.torrent-path-navigation');
-        var folder_list = container.find('.torrent-folder-list');
-        var file_list = container.find('.torrent-file-list');
+        var breadcrumbs = container.querySelector('.torrent-path-navigation');
+        var folder_list = container.querySelector('.torrent-folder-list');
+        var file_list = container.querySelector('.torrent-file-list');
         
-        if (breadcrumbs.length === 0) {
-            container.prepend(renderBreadcrumbs(path));
-            container.prepend('<div class="torrent-folder-list"></div>');
-            breadcrumbs = container.find('.torrent-path-navigation');
-            folder_list = container.find('.torrent-folder-list');
+        if (!breadcrumbs) {
+            container.insertAdjacentHTML('afterbegin', renderBreadcrumbs(path));
+            container.insertAdjacentHTML('afterbegin', '<div class="torrent-folder-list"></div>');
+            breadcrumbs = container.querySelector('.torrent-path-navigation');
+            folder_list = container.querySelector('.torrent-folder-list');
         }
         
-        breadcrumbs.html(renderBreadcrumbs(path));
-        folder_list.html(renderFolderList(structure, path));
+        breadcrumbs.innerHTML = renderBreadcrumbs(path);
+        folder_list.innerHTML = renderFolderList(structure, path);
         
-        // Update original file list to show only files in current directory
-        file_list.find('.torrent-file').each(function() {
-            var file_path = $(this).data('path') || $(this).data('name');
-            $(this).toggle(file_path.startsWith(path) && 
-                          file_path.replace(path, '').split('/').length === 1);
+        // Обновление списка файлов
+        if (file_list) {
+            var file_elements = file_list.querySelectorAll('.torrent-file');
+            file_elements.forEach(function(file_el) {
+                var file_path = file_el.dataset.path || file_el.dataset.name;
+                file_el.style.display = file_path.startsWith(path) && 
+                                      file_path.replace(path, '').split('/').length === 1 
+                                      ? '' : 'none';
+            });
+        }
+        
+        // Обработчики событий
+        container.querySelectorAll('.path-item').forEach(function(el) {
+            el.removeEventListener('click', pathItemHandler);
+            el.addEventListener('click', pathItemHandler);
         });
         
-        // Handle navigation clicks
-        container.find('.path-item').on('hover:enter', function() {
-            var new_path = $(this).data('path');
-            path_history.push(current_path);
-            current_path = new_path;
-            updateFileList(data, new_path);
+        container.querySelectorAll('.folder-item').forEach(function(el) {
+            el.removeEventListener('click', folderItemHandler);
+            el.addEventListener('click', folderItemHandler);
         });
-        
-        container.find('.folder-item').on('hover:enter', function() {
-            var new_path = $(this).data('path');
-            path_history.push(current_path);
-            current_path = new_path;
-            updateFileList(data, new_path);
-        });
+    }
+
+    function pathItemHandler() {
+        var new_path = this.dataset.path;
+        path_history.push(current_path);
+        current_path = new_path;
+        Lampa.Listener.send('torrent_file', {type: 'navigate', path: new_path});
+    }
+
+    function folderItemHandler() {
+        var new_path = this.dataset.path;
+        path_history.push(current_path);
+        current_path = new_path;
+        Lampa.Listener.send('torrent_file', {type: 'navigate', path: new_path});
     }
 
     function handleBackNavigation() {
@@ -124,23 +156,50 @@
         return false;
     }
 
+    // Обработчики событий Lampa
     Lampa.Listener.follow('torrent_file', function (data) {
-        if (data.type == 'list_open') {
+        if (data.type === 'list_open') {
             list_opened = true;
             current_path = '';
             path_history = [];
         }
         
-        if (data.type == 'list_close') {
+        if (data.type === 'list_close') {
             list_opened = false;
         }
         
-        if (data.type == 'render' && list_opened) {
+        if (data.type === 'render' && list_opened) {
             updateFileList(data, current_path);
+        }
+        
+        if (data.type === 'navigate') {
+            updateFileList(data, data.path);
         }
     });
 
-    // Add CSS for the navigation elements
+    // Обработка кнопки "Назад"
+    document.addEventListener('keydown', function(e) {
+        if ((e.keyCode === 8 || e.keyCode === 461) && list_opened) {
+            if (handleBackNavigation()) {
+                e.preventDefault();
+                var container = document.querySelector('.torrent-list:not([style*="display: none"])');
+                if (container) {
+                    var data = {
+                        items: Array.from(container.querySelectorAll('.torrent-file')).map(function(el) {
+                            return {
+                                path: el.dataset.path,
+                                name: el.dataset.name
+                            };
+                        }),
+                        element: container
+                    };
+                    updateFileList(data, current_path);
+                }
+            }
+        }
+    });
+
+    // Стили для навигации
     Lampa.Template.add('torrent_navigation_css', `
         <style>
             .torrent-path-navigation {
@@ -196,27 +255,5 @@
         </style>
     `);
     
-    $('body').append(Lampa.Template.get('torrent_navigation_css', {}, true));
-
-    // Handle back button
-    document.addEventListener('keydown', function(e) {
-        if (e.keyCode === 8 || e.keyCode === 461) { // Backspace or Back button
-            if (list_opened && handleBackNavigation()) {
-                e.preventDefault();
-                var container = $('.torrent-list:visible');
-                if (container.length) {
-                    var data = {
-                        items: container.find('.torrent-file').toArray().map(function(el) {
-                            return {
-                                path: $(el).data('path'),
-                                name: $(el).data('name')
-                            };
-                        }),
-                        element: container
-                    };
-                    updateFileList(data, current_path);
-                }
-            }
-        }
-    });
+    document.head.insertAdjacentHTML('beforeend', Lampa.Template.get('torrent_navigation_css', {}, true));
 })();
