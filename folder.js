@@ -36,7 +36,6 @@
     }
 
     function renderFolderList(structure, path) {
-        // Показываем только первый уровень вложенности для текущего пути
         var folders = structure;
         if (path) {
             var parts = path.split('/');
@@ -58,33 +57,34 @@
         try {
             var root_element = data.element;
 
-            // Если строка — ищем DOM-элемент по селектору
+            // Проверяем тип data.element и ищем DOM-элемент по-разному
             if (typeof root_element === 'string') {
                 root_element = document.querySelector(root_element);
-            }
-
-            // Если jQuery-объект — берем первый элемент
-            if (root_element && root_element.jquery) {
+            } else if (root_element && root_element.jquery) {
                 root_element = root_element[0];
+            } else if (root_element && typeof root_element === 'object' && !(root_element instanceof Element)) {
+                // Если это объект файла, пытаемся найти DOM-элемент по data-path
+                if (root_element.path) {
+                    root_element = document.querySelector(`[data-path="${CSS.escape(root_element.path)}"]`);
+                } else {
+                    console.error('data.element передан объектом без path:', root_element);
+                    return;
+                }
             }
 
-            // Проверяем, что root_element — DOM-элемент
             if (!(root_element instanceof Element)) {
                 console.error('root_element не является DOM-элементом');
                 return;
             }
 
-            // Ищем контейнер с классом .torrent-list через closest
             var container = root_element.closest('.torrent-list');
             if (!container) {
                 console.error('Не найден .torrent-list контейнер');
                 return;
             }
 
-            // Строим структуру папок из данных
             var structure = getFolderStructure(data.items);
 
-            // Добавляем навигацию, если её нет
             if (!container.querySelector('.torrent-navigation')) {
                 container.insertAdjacentHTML('afterbegin', `
                     <div class="torrent-navigation">
@@ -94,14 +94,32 @@
                 `);
             }
 
-            // Обновляем хлебные крошки
             container.querySelector('.torrent-path-navigation').innerHTML = renderBreadcrumbs(path);
-
-            // Обновляем список папок
             container.querySelector('.torrent-folder-list').innerHTML = renderFolderList(structure, path);
 
-            // Фильтруем и отображаем файлы
             filterAndDisplayFiles(container, data.items, path);
+
+            // Вешаем обработчики кликов на хлебные крошки
+            var breadcrumbs = container.querySelectorAll('.torrent-path-navigation .breadcrumb');
+            breadcrumbs.forEach(function(crumb) {
+                crumb.onclick = function() {
+                    current_path = crumb.dataset.path || '';
+                    updateFileList(data, current_path);
+                };
+            });
+
+            // Вешаем обработчики кликов на папки
+            var folder_items = container.querySelectorAll('.torrent-folder-list .folder-item');
+            folder_items.forEach(function(folder) {
+                folder.onclick = function() {
+                    var newPath = folder.dataset.path || '';
+                    if (newPath) {
+                        path_history.push(current_path);
+                        current_path = newPath;
+                        updateFileList(data, current_path);
+                    }
+                };
+            });
 
         } catch (e) {
             console.error('Ошибка в updateFileList:', e);
@@ -114,8 +132,15 @@
 
         Array.from(file_list.children).forEach(function(file_el) {
             var file_path = file_el.dataset.path || file_el.dataset.name || '';
-            var in_current_dir = file_path.startsWith(path) && 
-                                 file_path.replace(path, '').split('/').length === 1;
+            var in_current_dir = false;
+            if (path === '') {
+                // показываем только файлы в корне (без вложений)
+                in_current_dir = file_path.indexOf('/') === -1;
+            } else if (file_path.startsWith(path)) {
+                // проверяем, что файл в текущей папке, а не в поддиректории
+                var rest = file_path.slice(path.length);
+                in_current_dir = rest.indexOf('/') === -1 && (rest !== '');
+            }
             file_el.style.display = in_current_dir ? '' : 'none';
         });
     }
@@ -129,17 +154,13 @@
             current_path = '';
             path_history = [];
             console.log('Открыт список файлов');
-        }
-        else if (data.type === 'list_close') {
+        } else if (data.type === 'list_close') {
             list_opened = false;
-        }
-        else if (data.type === 'render' && list_opened) {
+        } else if (data.type === 'render' && list_opened) {
             console.log('Рендер списка файлов', data);
             updateFileList(data, current_path);
         }
     });
-
-    // TODO: добавить обработчики кликов по хлебным крошкам и папкам, чтобы менять current_path и перерисовывать список
 
     console.log('Плагин навигации по папкам успешно инициализирован');
 })();
