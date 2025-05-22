@@ -58,7 +58,7 @@
         try {
             var root_element = data.element;
 
-            // Если строка — ищем DOM-элемент
+            // Если строка — ищем DOM-элемент по селектору
             if (typeof root_element === 'string') {
                 root_element = document.querySelector(root_element);
             }
@@ -74,14 +74,14 @@
                 return;
             }
 
-            // Ищем контейнер с классом .torrent-list
+            // Ищем контейнер с классом .torrent-list через closest
             var container = root_element.closest('.torrent-list');
             if (!container) {
                 console.error('Не найден .torrent-list контейнер');
                 return;
             }
 
-            // Создаем структуру папок
+            // Строим структуру папок из данных
             var structure = getFolderStructure(data.items);
 
             // Добавляем навигацию, если её нет
@@ -139,7 +139,7 @@
         }
     });
 
-    // Дополнительно можно добавить обработчики кликов по хлебным крошкам и папкам, чтобы менять current_path
+    // TODO: добавить обработчики кликов по хлебным крошкам и папкам, чтобы менять current_path и перерисовывать список
 
     console.log('Плагин навигации по папкам успешно инициализирован');
 })();
